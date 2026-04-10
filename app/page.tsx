@@ -62,7 +62,6 @@ export default function Home() {
     try {
       const params = new URLSearchParams()
 
-      // Si hay texto, usar IA para interpretarlo
       if (q.trim()) {
         const res1 = await fetch('/api/ai/parse-query', {
           method: 'POST',
@@ -73,23 +72,27 @@ export default function Home() {
         setFilters(parsed)
         if (parsed.keywords) params.set('q', parsed.keywords)
         if (parsed.importe_min && !importeMin) params.set('importe_min', String(parsed.importe_min))
-        if (parsed.comunidad && ccaa === 'Todas') params.set('comunidad', parsed.comunidad)
       } else {
         setFilters(null)
       }
 
-      // Aplicar filtros manuales (tienen prioridad sobre los de la IA)
       if (importeMin) params.set('importe_min', importeMin)
-      if (ccaa !== 'Todas') params.set('comunidad', ccaa)
 
       const res2 = await fetch(`/api/licitaciones/search?${params}`)
       const data = await res2.json()
       let lics: Licitacion[] = data.licitaciones ?? []
 
-      // Filtrar por tipo de contrato localmente
       if (tipo !== 'Todos') {
         const t = tipo.toLowerCase().slice(0, 5)
         lics = lics.filter(l => l.titulo.toLowerCase().includes(t))
+      }
+
+      if (ccaa !== 'Todas') {
+        const c = ccaa.toLowerCase()
+        lics = lics.filter(l =>
+          l.titulo.toLowerCase().includes(c) ||
+          l.org.toLowerCase().includes(c)
+        )
       }
 
       setResults(lics)
@@ -114,13 +117,7 @@ export default function Home() {
       <div className="bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            {l.url
-              ? <a href={l.url} target="_blank" rel="noopener noreferrer"
-                  className="font-medium text-blue-700 hover:underline leading-snug block">
-                  {l.titulo}
-                </a>
-              : <div className="font-medium text-gray-900 leading-snug">{l.titulo}</div>
-            }
+            <div className="font-medium text-gray-900 leading-snug">{l.titulo}</div>
             {l.id_expediente && (
               <div className="text-xs text-gray-400 mt-0.5 font-mono">Exp: {l.id_expediente}</div>
             )}
@@ -140,10 +137,11 @@ export default function Home() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {l.url && (
-              <a href={`https://www.google.com/search?q=${encodeURIComponent(l.id_expediente + ' ' + l.titulo + ' licitacion')}`} target="_blank" rel="noopener noreferrer"
+            {l.id_expediente && (
+              <a href={`https://www.google.com/search?q=${encodeURIComponent(l.id_expediente + ' ' + l.titulo.slice(0, 40) + ' licitacion pliego')}`}
+                target="_blank" rel="noopener noreferrer"
                 className="text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 transition-colors">
-                Ver pliegos
+                Buscar expediente
               </a>
             )}
             <button onClick={onGuardar}
