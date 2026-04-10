@@ -141,7 +141,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2">
             {l.url && (
-              <a href={l.url} target="_blank" rel="noopener noreferrer"
+              <a href={`https://www.google.com/search?q=${encodeURIComponent(l.id_expediente + ' ' + l.titulo + ' licitacion')}`} target="_blank" rel="noopener noreferrer"
                 className="text-xs px-3 py-1 rounded-full border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 transition-colors">
                 Ver pliegos
               </a>
