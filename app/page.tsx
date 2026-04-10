@@ -56,12 +56,11 @@ export default function Home() {
     const sinTexto = !q.trim()
     const sinFiltros = tipo === 'Todos' && ccaa === 'Todas' && !importeMin
     if (sinTexto && sinFiltros) return
-
-    setLoading(true); setSearched(true); setTab('buscar')
-
+    setLoading(true)
+    setSearched(true)
+    setTab('buscar')
     try {
       const params = new URLSearchParams()
-
       if (q.trim()) {
         const res1 = await fetch('/api/ai/parse-query', {
           method: 'POST',
@@ -75,18 +74,13 @@ export default function Home() {
       } else {
         setFilters(null)
       }
-
       if (importeMin) params.set('importe_min', importeMin)
       if (tipo !== 'Todos') params.set('tipo', tipo.toLowerCase())
       if (ccaa !== 'Todas') params.set('comunidad', ccaa)
-
       const res2 = await fetch(`/api/licitaciones/search?${params}`)
       const data = await res2.json()
-      const lics: Licitacion[] = data.licitaciones ?? []
-      setResults(lics)
-
+      setResults(data.licitaciones ?? [])
     } catch (e) { console.error(e) }
-
     setLoading(false)
   }
 
@@ -188,7 +182,6 @@ export default function Home() {
                   : <button onClick={() => buscar()} className="bg-[#1e3a5f] text-white text-sm px-4 py-2 rounded-lg hover:opacity-90 shrink-0">Buscar</button>
                 }
               </div>
-
               {showFiltros && (
                 <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-3 gap-3">
                   <div>
@@ -213,7 +206,6 @@ export default function Home() {
                   </div>
                 </div>
               )}
-
               {!searched && !showFiltros && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {ejemplos.map(ej => (
@@ -225,13 +217,11 @@ export default function Home() {
                 </div>
               )}
             </div>
-
             {filters?.resumen && (
               <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 mb-3 text-sm text-gray-600">
                 IA interpretó: <span className="font-medium text-gray-900">"{filters.resumen}"</span>
               </div>
             )}
-
             {results.length > 0 && (
               <div>
                 <div className="text-sm text-gray-500 mb-3">{results.length} licitaciones encontradas</div>
@@ -242,13 +232,11 @@ export default function Home() {
                 </div>
               </div>
             )}
-
             {searched && !loading && results.length === 0 && (
               <div className="text-center py-12 text-gray-500">Sin resultados. Prueba con otros términos o filtros.</div>
             )}
           </>
         )}
-
         {tab === 'guardadas' && (
           <div>
             <div className="text-sm text-gray-500 mb-3">
