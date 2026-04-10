@@ -1,56 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { parseStringPromise } from 'xml2js'
-
-const PLACSP_URL = 'https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom'
-
-interface Licitacion {
-  id: string
-  titulo: string
-  org: string
-  cpv: string
-  importe: number | null
-  estado: string
-  cierre: string
-  ccaa: string
-}
-
-async function fetchPLACSP(): Promise<Licitacion[]> {
-  try {
-    const res = await fetch(PLACSP_URL, {
-      next: { revalidate: 3600 },
-      headers: { 'Accept': 'application/atom+xml, application/xml, text/xml' }
-    })
-    if (!res.ok) return []
-    const xml = await res.text()
-    const parsed = await parseStringPromise(xml, { explicitArray: false, mergeAttrs: true })
-    const entries = parsed?.feed?.entry ?? []
-    const arr = Array.isArray(entries) ? entries : [entries]
-    return arr.map((e: Record<string, unknown>, i: number) => {
-      const summary = String(e['summary'] ?? '')
-      const importeMatch = summary.match(/[\d]{4,}[.,]?\d*/)?.[0]
-      const importe = importeMatch ? parseFloat(importeMatch.replace(/\./g, '').replace(',', '.')) : null
-      const titulo = typeof e['title'] === 'object'
-        ? String((e['title'] as Record<string, unknown>)?._ ?? '')
-        : String(e['title'] ?? '')
-      const org = typeof e['author'] === 'object'
-        ? String((e['author'] as Record<string, unknown>)?.name ?? '')
-        : ''
-      return {
-        id: String(i),
-        titulo,
-        org,
-        cpv: '',
-        importe,
-        estado: 'ABIERTA',
-        cierre: String(e['updated'] ?? '').slice(0, 10),
-        ccaa: '',
-      }
-    })
-  } catch (e) {
-    console.error('PLACSP error:', e)
-    return []
-  }
-}
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
@@ -59,16 +7,54 @@ export async function GET(req: NextRequest) {
   const importeMin = sp.get('importe_min') ? Number(sp.get('importe_min')) : null
   const importeMax = sp.get('importe_max') ? Number(sp.get('importe_max')) : null
 
-  const todas = await fetchPLACSP()
+  try {
+    const res = await fetch(
+      'https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom',
+      { next: { revalidate: 3600 } }
+    )
 
-  const results = todas.filter(l => {
-    const texto = (l.titulo + ' ' + l.org).toLowerCase()
-    if (q && !q.split(' ').some((w: string) => w.length > 2 && texto.includes(w))) return false
-    if (estado && l.estado !== estado) return false
-    if (importeMin && (l.importe ?? 0) < importeMin) return false
-    if (importeMax && (l.importe ?? 0) > importeMax) return false
-    return true
-  })
+    if (!res.ok) throw new Error('PLACSP no disponible')
 
-  return NextResponse.json({ licitaciones: results.slice(0, 50), total: results.length })
+    const xml = await res.text()
+
+    // Extraer entradas con regex simple (sin xml2js para evitar errores de tipos)
+    const entries: { titulo: string; org: string; importe: number | null; fecha: string }[] = []
+    const entryRegex = /<entry>([\s\S]*?)<\/entry>/g
+    let match
+
+    while ((match = entryRegex.exec(xml)) !== null) {
+      const entry = match[1]
+      const titulo = (/<title[^>]*>([\s\S]*?)<\/title>/.exec(entry)?.[1] ?? '').replace(/<!\[CDATA\[|\]\]>/g, '').trim()
+      const org = (/<name>([\s\S]*?)<\/name>/.exec(entry)?.[1] ?? '').trim()
+      const summary = (/<summary[^>]*>([\s\S]*?)<\/summary>/.exec(entry)?.[1] ?? '')
+      const updated = (/<updated>([\s\S]*?)<\/updated>/.exec(entry)?.[1] ?? '').slice(0, 10)
+      const importeMatch = summary.match(/(\d{4,})[.,]?\d*/)
+      const importe = importeMatch ? parseFloat(importeMatch[1]) : null
+      if (titulo) entries.push({ titulo, org, importe, fecha: updated })
+    }
+
+    const results = entries.filter(l => {
+      const texto = (l.titulo + ' ' + l.org).toLowerCase()
+      if (q && !q.split(' ').some(w => w.length > 2 && texto.includes(w))) return false
+      if (estado) return false
+      if (importeMin && (l.importe ?? 0) < importeMin) return false
+      if (importeMax && (l.importe ?? 0) > importeMax) return false
+      return true
+    })
+
+    const licitaciones = results.slice(0, 50).map((l, i) => ({
+      id: String(i),
+      titulo: l.titulo,
+      org: l.org,
+      cpv: '',
+      importe: l.importe,
+      estado: 'ABIERTA',
+      cierre: l.fecha,
+      ccaa: '',
+    }))
+
+    return NextResponse.json({ licitaciones, total: results.length })
+  } catch {
+    return NextResponse.json({ licitaciones: [], total: 0, error: 'Error conectando con PLACSP' })
+  }
 }
