@@ -31,10 +31,11 @@ export async function GET(req: NextRequest) {
       const importeMatch = summary.match(/(\d{4,})[.,]?\d*/)
       const importe = importeMatch ? parseFloat(importeMatch[1]) : null
       const idEvl = /<cbc:ContractFolderID>([\s\S]*?)<\/cbc:ContractFolderID>/.exec(entry)?.[1]?.trim() ?? ''
-      const linkRaw = /<link[^>]*href="([^"]*detalle_licitacion[^"]*)"/.exec(entry)?.[1]
-        ?? /<link[^>]*href="([^"]*idEvl[^"]*)"/.exec(entry)?.[1] ?? ''
-      const url = linkRaw ||
-        (idEvl ? `https://contrataciondelestado.es/wps/poc?uri=deeplink:detalle_licitacion&idEvl=${encodeURIComponent(idEvl)}` : '')
+      
+      // URL de búsqueda por número de expediente en PLACSP
+      const url = idEvl
+        ? `https://contrataciondelestado.es/wps/portal/plataforma/inicio/busqueda/?numExpediente=${encodeURIComponent(idEvl)}`
+        : ''
 
       if (titulo) entries.push({ titulo, org, importe, fecha: updated, url, id_expediente: idEvl })
     }
