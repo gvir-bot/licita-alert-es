@@ -77,25 +77,14 @@ export default function Home() {
       }
 
       if (importeMin) params.set('importe_min', importeMin)
+      if (tipo !== 'Todos') params.set('tipo', tipo.toLowerCase())
+      if (ccaa !== 'Todas') params.set('comunidad', ccaa)
 
       const res2 = await fetch(`/api/licitaciones/search?${params}`)
       const data = await res2.json()
-      let lics: Licitacion[] = data.licitaciones ?? []
-
-      if (tipo !== 'Todos') {
-        const t = tipo.toLowerCase().slice(0, 5)
-        lics = lics.filter(l => l.titulo.toLowerCase().includes(t))
-      }
-
-      if (ccaa !== 'Todas') {
-        const c = ccaa.toLowerCase()
-        lics = lics.filter(l =>
-          l.titulo.toLowerCase().includes(c) ||
-          l.org.toLowerCase().includes(c)
-        )
-      }
-
+      const lics: Licitacion[] = data.licitaciones ?? []
       setResults(lics)
+
     } catch (e) { console.error(e) }
 
     setLoading(false)
@@ -135,6 +124,7 @@ export default function Home() {
                 Cierre: {l.cierre}{urgente && days >= 0 ? ` (${days}d)` : ''}
               </span>
             )}
+            {l.ccaa && <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 shrink-0">{l.ccaa}</span>}
           </div>
           <div className="flex items-center gap-2">
             {l.id_expediente && (
