@@ -5,6 +5,7 @@ export async function GET(req: NextRequest) {
   const q          = sp.get('q')?.toLowerCase()
   const importeMin = sp.get('importe_min') ? Number(sp.get('importe_min')) : null
   const importeMax = sp.get('importe_max') ? Number(sp.get('importe_max')) : null
+  const comunidad  = sp.get('comunidad')?.toLowerCase()
 
   try {
     const res = await fetch(
@@ -23,17 +24,30 @@ export async function GET(req: NextRequest) {
     let match
     while ((match = entryRegex.exec(xml)) !== null) {
       const entry = match[1]
+
       const titulo = (/<title[^>]*>([\s\S]*?)<\/title>/.exec(entry)?.[1] ?? '')
         .replace(/<!\[CDATA\[|\]\]>/g, '').trim()
       const org = (/<name>([\s\S]*?)<\/name>/.exec(entry)?.[1] ?? '').trim()
       const updated = (/<updated>([\s\S]*?)<\/updated>/.exec(entry)?.[1] ?? '').slice(0, 10)
-      const url = /<link[^>]*href="([^"]*)"/.exec(entry)?.[1] ?? ''
-      const idExp = (/<cbc:ContractFolderID>([\s\S]*?)<\/cbc:ContractFolderID>/.exec(entry)?.[1]
-        ?? /<id>([\s\S]*?)<\/id>/.exec(entry)?.[1] ?? '').trim()
       const summary = (/<summary[^>]*>([\s\S]*?)<\/summary>/.exec(entry)?.[1] ?? '')
       const importeMatch = summary.match(/(\d{4,})[.,]?\d*/)
       const importe = importeMatch ? parseFloat(importeMatch[1]) : null
-      if (titulo) entries.push({ titulo, org, importe, fecha: updated, url, id_expediente: idExp })
+
+      // Extraer ID para deeplink directo al detalle
+      const idEvl = /<cbc:ContractFolderID>([\s\S]*?)<\/cbc:ContractFolderID>/.exec(entry)?.[1]?.trim()
+        ?? /<id>([\s\S]*?)<\/id>/.exec(entry)?.[1]?.trim()
+        ?? ''
+
+      // Intentar extraer el link directo del feed
+      const linkRaw = /<link[^>]*href="([^"]*detalle_licitacion[^"]*)"/.exec(entry)?.[1]
+        ?? /<link[^>]*href="([^"]*idEvl[^"]*)"/.exec(entry)?.[1]
+        ?? ''
+
+      // Construir URL de detalle
+      const url = linkRaw ||
+        (idEvl ? `https://contrataciondelestado.es/wps/poc?uri=deeplink:detalle_licitacion&idEvl=${encodeURIComponent(idEvl)}` : '')
+
+      if (titulo) entries.push({ titulo, org, importe, fecha: updated, url, id_expediente: idEvl })
     }
 
     const results = entries.filter(l => {
@@ -41,6 +55,7 @@ export async function GET(req: NextRequest) {
       if (q && !q.split(' ').some(w => w.length > 2 && texto.includes(w))) return false
       if (importeMin && (l.importe ?? 0) < importeMin) return false
       if (importeMax && (l.importe ?? 0) > importeMax) return false
+      if (comunidad && !l.org.toLowerCase().includes(comunidad)) return false
       return true
     })
 
