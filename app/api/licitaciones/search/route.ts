@@ -1,35 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parseStringPromise } from 'xml2js'
 
-const MOCK_DATA = [
-  {id:'1',titulo:'Servicios de desarrollo software plataforma ciudadana',org:'Ayuntamiento de Madrid',cpv:'72200000',importe:285000,estado:'ABIERTA',cierre:'2025-05-12',ccaa:'Madrid'},
-  {id:'2',titulo:'Consultoría estratégica transformación digital',org:'Ministerio de Hacienda',cpv:'72221000',importe:480000,estado:'ABIERTA',cierre:'2025-04-28',ccaa:'Madrid'},
-  {id:'3',titulo:'Suministro equipos informáticos servidores blade',org:'Generalitat de Catalunya',cpv:'30200000',importe:1240000,estado:'ABIERTA',cierre:'2025-05-03',ccaa:'Cataluña'},
-  {id:'4',titulo:'Mantenimiento sistemas de información tributarios',org:'Agencia Tributaria',cpv:'72250000',importe:620000,estado:'ADJUDICADA',cierre:'2025-03-15',ccaa:'Madrid'},
-  {id:'5',titulo:'Obras rehabilitación edificio sede ministerial',org:'Ministerio de Cultura',cpv:'45000000',importe:3800000,estado:'ABIERTA',cierre:'2025-06-01',ccaa:'Madrid'},
-  {id:'6',titulo:'Servicio limpieza centros educativos públicos',org:'Gobierno Vasco Educación',cpv:'90910000',importe:890000,estado:'ABIERTA',cierre:'2025-04-30',ccaa:'País Vasco'},
-  {id:'7',titulo:'Plataforma inteligencia artificial gestión documental',org:'Junta de Andalucía',cpv:'72212900',importe:340000,estado:'ABIERTA',cierre:'2025-05-20',ccaa:'Andalucía'},
-  {id:'8',titulo:'Desarrollo sistema gestión hospitalaria',org:'Servicio Murciano de Salud',cpv:'48180000',importe:760000,estado:'ABIERTA',cierre:'2025-05-15',ccaa:'Murcia'},
-]
+const PLACSP_URL = 'https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom'
+
+interface Licitacion {
+  id: string
+  titulo: string
+  org: string
+  cpv: string
+  importe: number | null
+  estado: string
+  cierre: string
+  ccaa: string
+}
+
+async function fetchPLACSP(): Promise<Licitacion[]> {
+  try {
+    const res = await fetch(PLACSP_URL, {
+      next: { revalidate: 3600 },
+      headers: { 'Accept': 'application/atom+xml, application/xml, text/xml' }
+    })
+    if (!res.ok) return []
+    const xml = await res.text()
+    const parsed = await parseStringPromise(xml, { explicitArray: false, mergeAttrs: true })
+    const entries = parsed?.feed?.entry ?? []
+    const arr = Array.isArray(entries) ? entries : [entries]
+    return arr.map((e: Record<string, unknown>, i: number) => {
+      const summary = String(e['summary'] ?? '')
+      const importeMatch = summary.match(/[\d]{4,}[.,]?\d*/)?.[0]
+      const importe = importeMatch ? parseFloat(importeMatch.replace(/\./g, '').replace(',', '.')) : null
+      const titulo = typeof e['title'] === 'object'
+        ? String((e['title'] as Record<string, unknown>)?._ ?? '')
+        : String(e['title'] ?? '')
+      const org = typeof e['author'] === 'object'
+        ? String((e['author'] as Record<string, unknown>)?.name ?? '')
+        : ''
+      return {
+        id: String(i),
+        titulo,
+        org,
+        cpv: '',
+        importe,
+        estado: 'ABIERTA',
+        cierre: String(e['updated'] ?? '').slice(0, 10),
+        ccaa: '',
+      }
+    })
+  } catch (e) {
+    console.error('PLACSP error:', e)
+    return []
+  }
+}
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
-  const q         = sp.get('q')?.toLowerCase()
-  const cpv       = sp.get('cpv')
-  const estado    = sp.get('estado')
-  const comunidad = sp.get('comunidad')?.toLowerCase()
+  const q          = sp.get('q')?.toLowerCase()
+  const estado     = sp.get('estado')
   const importeMin = sp.get('importe_min') ? Number(sp.get('importe_min')) : null
   const importeMax = sp.get('importe_max') ? Number(sp.get('importe_max')) : null
 
-  let results = MOCK_DATA.filter(l => {
+  const todas = await fetchPLACSP()
+
+  const results = todas.filter(l => {
     const texto = (l.titulo + ' ' + l.org).toLowerCase()
-    if (q && !q.split(' ').some(w => w.length > 2 && texto.includes(w))) return false
-    if (cpv && !l.cpv.startsWith(cpv)) return false
+    if (q && !q.split(' ').some((w: string) => w.length > 2 && texto.includes(w))) return false
     if (estado && l.estado !== estado) return false
-    if (comunidad && !l.ccaa.toLowerCase().includes(comunidad)) return false
-    if (importeMin && l.importe < importeMin) return false
-    if (importeMax && l.importe > importeMax) return false
+    if (importeMin && (l.importe ?? 0) < importeMin) return false
+    if (importeMax && (l.importe ?? 0) > importeMax) return false
     return true
   })
 
-  return NextResponse.json({ licitaciones: results, total: results.length })
+  return NextResponse.json({ licitaciones: results.slice(0, 50), total: results.length })
 }
