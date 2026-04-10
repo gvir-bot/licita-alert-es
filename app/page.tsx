@@ -19,16 +19,16 @@ const TIPOS = ['Todos', 'Obras', 'Servicios', 'Suministros']
 const CCAA = ['Todas', 'Madrid', 'Cataluña', 'Andalucía', 'Valencia', 'País Vasco', 'Galicia', 'Aragón', 'Murcia']
 
 export default function Home() {
-  const [query, setQuery]         = useState('')
-  const [loading, setLoading]     = useState(false)
-  const [filters, setFilters]     = useState<{resumen?: string} | null>(null)
-  const [results, setResults]     = useState<Licitacion[]>([])
-  const [searched, setSearched]   = useState(false)
-  const [guardadas, setGuardadas] = useState<Licitacion[]>([])
-  const [tab, setTab]             = useState<'buscar' | 'guardadas'>('buscar')
-  const [tipo, setTipo]           = useState('Todos')
-  const [ccaa, setCcaa]           = useState('Todas')
-  const [importeMin, setImporteMin] = useState('')
+  const [query, setQuery]             = useState('')
+  const [loading, setLoading]         = useState(false)
+  const [filters, setFilters]         = useState<{resumen?: string} | null>(null)
+  const [results, setResults]         = useState<Licitacion[]>([])
+  const [searched, setSearched]       = useState(false)
+  const [guardadas, setGuardadas]     = useState<Licitacion[]>([])
+  const [tab, setTab]                 = useState<'buscar' | 'guardadas'>('buscar')
+  const [tipo, setTipo]               = useState('Todos')
+  const [ccaa, setCcaa]               = useState('Todas')
+  const [importeMin, setImporteMin]   = useState('')
   const [showFiltros, setShowFiltros] = useState(false)
 
   useEffect(() => {
@@ -53,28 +53,48 @@ export default function Home() {
   const ejemplos = ['consultoría TI Madrid', 'obras públicas abiertas', 'limpieza centros educativos', 'software hospitalario']
 
   async function buscar(q = query) {
-    if (!q.trim()) return
+    const sinTexto = !q.trim()
+    const sinFiltros = tipo === 'Todos' && ccaa === 'Todas' && !importeMin
+    if (sinTexto && sinFiltros) return
+
     setLoading(true); setSearched(true); setTab('buscar')
+
     try {
-      const res1 = await fetch('/api/ai/parse-query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q }),
-      })
-      const parsed = await res1.json()
-      setFilters(parsed)
       const params = new URLSearchParams()
-      if (parsed.keywords)    params.set('q', parsed.keywords)
-      if (parsed.importe_min || importeMin) params.set('importe_min', parsed.importe_min || importeMin)
-      if (parsed.comunidad || ccaa !== 'Todas') params.set('comunidad', parsed.comunidad || ccaa)
+
+      // Si hay texto, usar IA para interpretarlo
+      if (q.trim()) {
+        const res1 = await fetch('/api/ai/parse-query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q }),
+        })
+        const parsed = await res1.json()
+        setFilters(parsed)
+        if (parsed.keywords) params.set('q', parsed.keywords)
+        if (parsed.importe_min && !importeMin) params.set('importe_min', String(parsed.importe_min))
+        if (parsed.comunidad && ccaa === 'Todas') params.set('comunidad', parsed.comunidad)
+      } else {
+        setFilters(null)
+      }
+
+      // Aplicar filtros manuales (tienen prioridad sobre los de la IA)
+      if (importeMin) params.set('importe_min', importeMin)
+      if (ccaa !== 'Todas') params.set('comunidad', ccaa)
+
       const res2 = await fetch(`/api/licitaciones/search?${params}`)
       const data = await res2.json()
       let lics: Licitacion[] = data.licitaciones ?? []
+
+      // Filtrar por tipo de contrato localmente
       if (tipo !== 'Todos') {
-        lics = lics.filter(l => l.titulo.toLowerCase().includes(tipo.toLowerCase().slice(0, 4)))
+        const t = tipo.toLowerCase().slice(0, 5)
+        lics = lics.filter(l => l.titulo.toLowerCase().includes(t))
       }
+
       setResults(lics)
     } catch (e) { console.error(e) }
+
     setLoading(false)
   }
 
@@ -84,8 +104,7 @@ export default function Home() {
   }
 
   function daysLeft(fecha: string) {
-    const d = Math.ceil((new Date(fecha).getTime() - Date.now()) / 86400000)
-    return d
+    return Math.ceil((new Date(fecha).getTime() - Date.now()) / 86400000)
   }
 
   const CardLicitacion = ({ l, onGuardar }: { l: Licitacion; onGuardar: () => void }) => {
@@ -116,7 +135,7 @@ export default function Home() {
             <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">{l.estado}</span>
             {l.cierre && (
               <span className={`shrink-0 ${urgente ? 'text-red-600 font-medium' : ''}`}>
-                Cierre: {l.cierre}{urgente ? ` (${days}d)` : ''}
+                Cierre: {l.cierre}{urgente && days >= 0 ? ` (${days}d)` : ''}
               </span>
             )}
           </div>
@@ -170,10 +189,10 @@ export default function Home() {
                 </svg>
                 <input value={query} onChange={e => setQuery(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && buscar()}
-                  placeholder="Describe qué licitaciones buscas..."
+                  placeholder="Describe qué licitaciones buscas... (o usa solo filtros)"
                   className="flex-1 bg-transparent text-base outline-none placeholder-gray-400"/>
                 <button onClick={() => setShowFiltros(!showFiltros)}
-                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors shrink-0 ${showFiltros ? 'bg-gray-100 border-gray-300' : 'border-gray-200 text-gray-500'}`}>
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors shrink-0 ${showFiltros ? 'bg-gray-100 border-gray-300 text-gray-700' : 'border-gray-200 text-gray-500'}`}>
                   Filtros {showFiltros ? '▲' : '▼'}
                 </button>
                 {loading
@@ -202,7 +221,7 @@ export default function Home() {
                     <div className="text-xs text-gray-400 mb-1">Importe mínimo (€)</div>
                     <input value={importeMin} onChange={e => setImporteMin(e.target.value)}
                       placeholder="ej: 50000"
-                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5"/>
+                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 outline-none"/>
                   </div>
                 </div>
               )}
@@ -237,7 +256,7 @@ export default function Home() {
             )}
 
             {searched && !loading && results.length === 0 && (
-              <div className="text-center py-12 text-gray-500">Sin resultados. Intenta con otros términos.</div>
+              <div className="text-center py-12 text-gray-500">Sin resultados. Prueba con otros términos o filtros.</div>
             )}
           </>
         )}
