@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const q          = sp.get('q')?.toLowerCase()
-  const estado     = sp.get('estado')
   const importeMin = sp.get('importe_min') ? Number(sp.get('importe_min')) : null
   const importeMax = sp.get('importe_max') ? Number(sp.get('importe_max')) : null
 
@@ -12,31 +11,34 @@ export async function GET(req: NextRequest) {
       'https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom',
       { next: { revalidate: 3600 } }
     )
-
     if (!res.ok) throw new Error('PLACSP no disponible')
-
     const xml = await res.text()
 
-    // Extraer entradas con regex simple (sin xml2js para evitar errores de tipos)
-    const entries: { titulo: string; org: string; importe: number | null; fecha: string }[] = []
+    const entries: {
+      titulo: string; org: string; importe: number | null
+      fecha: string; url: string; id_expediente: string
+    }[] = []
+
     const entryRegex = /<entry>([\s\S]*?)<\/entry>/g
     let match
-
     while ((match = entryRegex.exec(xml)) !== null) {
       const entry = match[1]
-      const titulo = (/<title[^>]*>([\s\S]*?)<\/title>/.exec(entry)?.[1] ?? '').replace(/<!\[CDATA\[|\]\]>/g, '').trim()
+      const titulo = (/<title[^>]*>([\s\S]*?)<\/title>/.exec(entry)?.[1] ?? '')
+        .replace(/<!\[CDATA\[|\]\]>/g, '').trim()
       const org = (/<name>([\s\S]*?)<\/name>/.exec(entry)?.[1] ?? '').trim()
-      const summary = (/<summary[^>]*>([\s\S]*?)<\/summary>/.exec(entry)?.[1] ?? '')
       const updated = (/<updated>([\s\S]*?)<\/updated>/.exec(entry)?.[1] ?? '').slice(0, 10)
+      const url = /<link[^>]*href="([^"]*)"/.exec(entry)?.[1] ?? ''
+      const idExp = (/<cbc:ContractFolderID>([\s\S]*?)<\/cbc:ContractFolderID>/.exec(entry)?.[1]
+        ?? /<id>([\s\S]*?)<\/id>/.exec(entry)?.[1] ?? '').trim()
+      const summary = (/<summary[^>]*>([\s\S]*?)<\/summary>/.exec(entry)?.[1] ?? '')
       const importeMatch = summary.match(/(\d{4,})[.,]?\d*/)
       const importe = importeMatch ? parseFloat(importeMatch[1]) : null
-      if (titulo) entries.push({ titulo, org, importe, fecha: updated })
+      if (titulo) entries.push({ titulo, org, importe, fecha: updated, url, id_expediente: idExp })
     }
 
     const results = entries.filter(l => {
       const texto = (l.titulo + ' ' + l.org).toLowerCase()
       if (q && !q.split(' ').some(w => w.length > 2 && texto.includes(w))) return false
-      if (estado) return false
       if (importeMin && (l.importe ?? 0) < importeMin) return false
       if (importeMax && (l.importe ?? 0) > importeMax) return false
       return true
@@ -51,10 +53,12 @@ export async function GET(req: NextRequest) {
       estado: 'ABIERTA',
       cierre: l.fecha,
       ccaa: '',
+      url: l.url,
+      id_expediente: l.id_expediente,
     }))
 
     return NextResponse.json({ licitaciones, total: results.length })
   } catch {
-    return NextResponse.json({ licitaciones: [], total: 0, error: 'Error conectando con PLACSP' })
+    return NextResponse.json({ licitaciones: [], total: 0 })
   }
 }
